@@ -1,0 +1,10 @@
+resources:
+  jobs:
+    tpch_benchmark:
+      name: "tpch_serverless_vs_classic_benchmark"
+      tasks:
+        - task_key: run_benchmark
+          notebook_task:
+            notebook_path: ../notebooks/run_benchmark.py
+          libraries:
+            - whl: ../dist/*.whl

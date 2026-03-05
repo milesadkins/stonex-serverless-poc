@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+.venv/
+*.json
+!databricks.yml
+!resources/*.yml
+.databricks/
