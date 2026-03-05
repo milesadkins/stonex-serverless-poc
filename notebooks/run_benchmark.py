@@ -2,9 +2,10 @@
 # MAGIC %md
 # MAGIC # TPC-H Benchmark: Serverless vs Classic Jobs Compute
 # MAGIC
-# MAGIC Runs all 22 TPC-H queries against `samples.tpch` using PySpark,
-# MAGIC timing each query execution. Deploy as two jobs — one serverless,
-# MAGIC one classic with `Standard_D8ds_v5` — then compare results.
+# MAGIC Runs all 22 TPC-H queries against `samples.tpch` using PySpark DataFrame API.
+# MAGIC This notebook is deployed as 4 separate jobs (one per compute configuration) via Databricks Asset Bundles.
+# MAGIC
+# MAGIC **All configuration is in the first cell below.** See `README.md` for full pricing methodology.
 
 # COMMAND ----------
 
@@ -13,28 +14,49 @@ import time
 from datetime import datetime
 from pyspark.sql import functions as F
 
+# --- Benchmark Settings ---
 CATALOG = "samples"
 SCHEMA = "tpch"
 ITERATIONS = 1
+RESULTS_TABLE = "hive_metastore.default.tpch_benchmark_results"
 
-# Detect compute type
+# --- Classic Compute Cluster ---
+NUM_NODES = 3  # 1 driver + 2 workers (must match resources/benchmark_job.yml)
+
+# --- Azure VM Pricing (hourly, pay-as-you-go list prices for your region) ---
+# Source: https://azure.microsoft.com/en-us/pricing/details/virtual-machines/linux/
+VM_PRICING = {
+    "Standard_D8s_v3": {"on_demand_hr": 0.384, "spot_hr": 0.077},
+    "Standard_D8ds_v5": {"on_demand_hr": 0.453, "spot_hr": 0.113},
+    "Standard_F8s_v2": {"on_demand_hr": 0.338, "spot_hr": 0.068},
+}
+
+# --- Customer Discount Rates ---
+DBU_DISCOUNT = 0.39       # 39% discount on Databricks DBUs
+AZURE_VM_DISCOUNT = 0.60  # 60% discount on Azure VM instances (e.g. reservations)
+
+# Get parameters from job
+dbutils.widgets.text("compute_type", "unknown")
+dbutils.widgets.text("benchmark_run_id", "unknown")
+compute_type = dbutils.widgets.get("compute_type")
+benchmark_run_id = dbutils.widgets.get("benchmark_run_id")
+
 try:
     cluster_id = spark.conf.get("spark.databricks.clusterUsageTags.clusterId", "unknown")
 except Exception:
     cluster_id = "unknown"
 
+# Get the job run ID from the context for billing correlation
 try:
-    is_serverless = spark.conf.get("spark.databricks.isServerless", "false")
-    compute_type = "serverless" if is_serverless.lower() == "true" else "classic"
+    context = dbutils.notebook.entry_point.getDbutils().notebook().getContext()
+    job_run_id = context.currentRunId().toString() if context.currentRunId() else "unknown"
 except Exception:
-    try:
-        cluster_tags = spark.conf.get("spark.databricks.clusterUsageTags.clusterAllTags", "")
-        compute_type = "serverless" if "Serverless" in cluster_tags else "classic"
-    except Exception:
-        compute_type = "unknown"
+    job_run_id = "unknown"
 
 print(f"Compute type: {compute_type}")
+print(f"Benchmark run ID: {benchmark_run_id}")
 print(f"Cluster ID: {cluster_id}")
+print(f"Job run ID: {job_run_id}")
 
 # COMMAND ----------
 
@@ -621,6 +643,7 @@ for query_id, query_info in QUERIES.items():
             "query_name": query_info["name"],
             "compute_type": compute_type,
             "cluster_id": cluster_id,
+            "benchmark_run_id": benchmark_run_id,
             "iteration": iteration,
             "execution_time_seconds": round(elapsed, 3),
             "row_count": row_count,
@@ -640,42 +663,168 @@ import pandas as pd
 results_df = spark.createDataFrame(pd.DataFrame(results))
 display(results_df)
 
-output_table = "default.tpch_benchmark_results"
-results_df.write.mode("append").saveAsTable(output_table)
+output_table = RESULTS_TABLE
+results_df.write.mode("append").option("mergeSchema", "true").saveAsTable(output_table)
 print(f"Results appended to {output_table}")
 
 # COMMAND ----------
 
-# DBTITLE 1,Compare Results (run after both jobs complete)
-comparison_df = spark.sql("""
-SELECT query_id, query_name, compute_type,
-    round(avg(execution_time_seconds), 3) AS avg_time_seconds,
-    round(min(execution_time_seconds), 3) AS min_time_seconds,
-    round(max(execution_time_seconds), 3) AS max_time_seconds,
-    count(*) AS num_runs
-FROM default.tpch_benchmark_results
-WHERE status = 'SUCCESS'
-GROUP BY query_id, query_name, compute_type
-ORDER BY query_id, compute_type
+# DBTITLE 1,Execution Time Pivot (all 4 configs)
+pivot_df = spark.sql(f"""
+WITH by_type AS (
+    SELECT query_id, query_name, compute_type, avg(execution_time_seconds) AS avg_time
+    FROM {RESULTS_TABLE} WHERE status = 'SUCCESS' AND benchmark_run_id = '{benchmark_run_id}'
+    GROUP BY query_id, query_name, compute_type
+)
+SELECT
+    query_id, query_name,
+    round(MAX(CASE WHEN compute_type = 'serverless_perf_optimized' THEN avg_time END), 3) AS serverless_perf,
+    round(MAX(CASE WHEN compute_type = 'serverless_cost_optimized' THEN avg_time END), 3) AS serverless_cost,
+    round(MAX(CASE WHEN compute_type = 'classic_on_demand' THEN avg_time END), 3) AS classic_on_demand,
+    round(MAX(CASE WHEN compute_type = 'classic_spot' THEN avg_time END), 3) AS classic_spot
+FROM by_type
+GROUP BY query_id, query_name
+ORDER BY query_id
 """)
-display(comparison_df)
+display(pivot_df)
 
 # COMMAND ----------
 
-# DBTITLE 1,Speedup Summary
-speedup_df = spark.sql("""
-WITH by_type AS (
-    SELECT query_id, query_name, compute_type, avg(execution_time_seconds) AS avg_time
-    FROM default.tpch_benchmark_results WHERE status = 'SUCCESS'
-    GROUP BY query_id, query_name, compute_type
-)
-SELECT c.query_id, c.query_name,
-    round(c.avg_time, 3) AS classic_seconds,
-    round(s.avg_time, 3) AS serverless_seconds,
-    round(c.avg_time / s.avg_time, 2) AS speedup,
-    round((c.avg_time - s.avg_time) / c.avg_time * 100, 1) AS pct_faster
-FROM by_type c JOIN by_type s ON c.query_id = s.query_id
-WHERE c.compute_type = 'classic' AND s.compute_type = 'serverless'
-ORDER BY c.query_id
-""")
-display(speedup_df)
+# DBTITLE 1,Cost Calculation Functions
+
+def apply_dbu_discount(list_price: float) -> float:
+    """Apply customer DBU discount to list price."""
+    return list_price * (1 - DBU_DISCOUNT)
+
+
+def compute_vm_cost(compute_type: str, execution_seconds: float, node_type: str = "Standard_D8s_v3") -> float:
+    """Calculate Azure VM cost for classic compute based on execution time only.
+
+    Serverless has no VM cost (infrastructure is managed by Databricks).
+    Classic on-demand: all nodes charged at on-demand rate * (1 - AZURE_VM_DISCOUNT).
+    Classic spot: 1 on-demand driver (discounted) + (N-1) spot workers (market rate, no further discount).
+    """
+    if "serverless" in compute_type:
+        return 0.0
+
+    vm_prices = VM_PRICING.get(node_type, VM_PRICING["Standard_D8s_v3"])
+    execution_hours = execution_seconds / 3600
+    discount_factor = 1 - AZURE_VM_DISCOUNT
+
+    if "spot" in compute_type:
+        driver_cost = vm_prices["on_demand_hr"] * discount_factor
+        worker_cost = vm_prices["spot_hr"]
+        return (1 * driver_cost + (NUM_NODES - 1) * worker_cost) * execution_hours
+    else:
+        return NUM_NODES * vm_prices["on_demand_hr"] * discount_factor * execution_hours
+
+# COMMAND ----------
+
+# DBTITLE 1,Cost Analysis: Full Cost Summary
+# Joins benchmark execution times with actual DBU consumption from system.billing.usage
+# and list prices from system.billing.list_prices.
+# NOTE: system.billing.usage has a lag of up to a few hours after job completion.
+# This cell is non-fatal — if system tables are inaccessible, it prints a message and continues.
+
+try:
+    workspace_id = spark.conf.get("spark.databricks.workspaceId", "unknown")
+
+    # Get execution times from benchmark results
+    exec_df = spark.sql(f"""
+    SELECT
+        compute_type,
+        SUM(execution_time_seconds) AS total_exec_seconds,
+        COUNT(*) AS num_queries,
+        SUM(CASE WHEN status = 'SUCCESS' THEN 1 ELSE 0 END) AS succeeded
+    FROM {RESULTS_TABLE}
+    WHERE benchmark_run_id = '{benchmark_run_id}'
+    GROUP BY compute_type
+    """).collect()
+
+    # Get actual DBU consumption + list prices from system tables
+    billing_df = spark.sql(f"""
+    SELECT
+        usage_metadata.job_name AS job_name,
+        usage_metadata.job_run_id AS job_run_id,
+        u.sku_name,
+        product_features.is_serverless,
+        product_features.performance_target,
+        ROUND(SUM(u.usage_quantity), 4) AS total_dbus,
+        ROUND(ANY_VALUE(lp.pricing.effective_list.default), 2) AS price_per_dbu,
+        ROUND(SUM(u.usage_quantity) * ANY_VALUE(lp.pricing.effective_list.default), 4) AS dbu_cost
+    FROM system.billing.usage u
+    JOIN system.billing.list_prices lp
+        ON u.sku_name = lp.sku_name
+        AND lp.price_end_time IS NULL
+        AND lp.cloud = 'AZURE'
+    WHERE u.workspace_id = {workspace_id}
+      AND u.billing_origin_product = 'JOBS'
+      AND u.identity_metadata.run_as = current_user()
+      AND u.custom_tags['project'] = 'tpch-benchmark'
+      AND u.usage_date >= current_date() - INTERVAL 7 DAYS
+      AND u.usage_metadata.job_name LIKE '%tpch_benchmark_%'
+    GROUP BY ALL
+    ORDER BY job_name
+    """)
+    display(billing_df)
+
+    # Build the full cost summary
+    print("\n=== Full Cost Summary ===\n")
+    print(f"{'Compute Type':<30} | {'Exec (s)':>8} | {'DBUs':>8} | {'List':>6} | {'Disc.':>6} | {'DBU Cost':>9} | {'VM Cost':>8} | {'Total':>8}")
+    print("-" * 110)
+
+    for row in exec_df:
+        ct = row["compute_type"]
+        exec_s = row["total_exec_seconds"]
+        succeeded = row["succeeded"]
+        num_q = row["num_queries"]
+
+        # Find matching billing row
+        billing_rows = billing_df.filter(billing_df.job_name.contains(ct)).collect()
+        if billing_rows:
+            b = billing_rows[0]
+            dbus = float(b["total_dbus"])
+            list_price = float(b["price_per_dbu"])
+        else:
+            dbus = 0
+            list_price = 0
+
+        discounted_price = apply_dbu_discount(list_price)
+        dbu_cost = round(dbus * discounted_price, 4)
+        vm_cost = compute_vm_cost(ct, exec_s)
+        total_cost = dbu_cost + vm_cost
+
+        print(f"{ct:<30} | {exec_s:>8.1f} | {dbus:>8.4f} | {list_price:>6.2f} | {discounted_price:>6.4f} | ${dbu_cost:>8.4f} | ${vm_cost:>7.4f} | ${total_cost:>7.4f}")
+
+    print(f"\nDiscounts: DBU {DBU_DISCOUNT:.0%}, Azure VM {AZURE_VM_DISCOUNT:.0%}")
+    print(f"VM pricing (list): {VM_PRICING}")
+    print(f"Nodes: {NUM_NODES} (1 driver + {NUM_NODES - 1} workers)")
+    print("VM cost uses execution time only (excludes cluster startup).")
+    print("Spot VM pricing is not further discounted (already market rate).")
+
+except Exception as e:
+    print(f"Cost analysis skipped (system tables not accessible from this compute): {e}")
+    print("Run this cell from a SQL warehouse or after billing data is ingested.")
+
+# COMMAND ----------
+
+# DBTITLE 1,List Prices Reference
+# Show current list prices for relevant SKUs from system.billing.list_prices
+try:
+    list_prices_df = spark.sql("""
+    SELECT
+        sku_name,
+        ROUND(pricing.effective_list.default, 2) AS price_per_dbu,
+        usage_unit
+    FROM system.billing.list_prices
+    WHERE cloud = 'AZURE'
+      AND price_end_time IS NULL
+      AND (
+        sku_name LIKE '%JOBS_COMPUTE%'
+        OR sku_name LIKE '%JOBS_SERVERLESS_COMPUTE_US_EAST%'
+      )
+    ORDER BY sku_name
+    """)
+    display(list_prices_df)
+except Exception as e:
+    print(f"List prices skipped: {e}")

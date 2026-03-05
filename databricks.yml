@@ -7,6 +7,11 @@ workspace:
 include:
   - resources/*.yml
 
+variables:
+  benchmark_run_id:
+    description: "Unique identifier for this benchmark run (e.g. 20260305_143000)"
+    default: "default"
+
 targets:
   dev:
     mode: development

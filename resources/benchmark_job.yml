@@ -1,35 +1,78 @@
 resources:
   jobs:
-    tpch_benchmark_serverless:
-      name: "tpch_benchmark_serverless"
+    tpch_serverless_perf_optimized:
+      name: "tpch_benchmark_serverless_perf_optimized"
       tags:
         project: "tpch-benchmark"
-        compute_type: "serverless"
+        compute_type: "serverless_perf_optimized"
+      performance_target: "PERFORMANCE_OPTIMIZED"
       tasks:
         - task_key: run_benchmark
           notebook_task:
             notebook_path: ../notebooks/run_benchmark.py
             source: WORKSPACE
+            base_parameters:
+              compute_type: "serverless_perf_optimized"
+              benchmark_run_id: "${var.benchmark_run_id}"
 
-    tpch_benchmark_classic:
-      name: "tpch_benchmark_classic"
+    tpch_serverless_cost_optimized:
+      name: "tpch_benchmark_serverless_cost_optimized"
       tags:
         project: "tpch-benchmark"
-        compute_type: "classic"
+        compute_type: "serverless_cost_optimized"
+      performance_target: "STANDARD"
       tasks:
         - task_key: run_benchmark
           notebook_task:
             notebook_path: ../notebooks/run_benchmark.py
             source: WORKSPACE
+            base_parameters:
+              compute_type: "serverless_cost_optimized"
+              benchmark_run_id: "${var.benchmark_run_id}"
+
+    tpch_classic_on_demand:
+      name: "tpch_benchmark_classic_on_demand"
+      tags:
+        project: "tpch-benchmark"
+        compute_type: "classic_on_demand"
+      tasks:
+        - task_key: run_benchmark
+          notebook_task:
+            notebook_path: ../notebooks/run_benchmark.py
+            source: WORKSPACE
+            base_parameters:
+              compute_type: "classic_on_demand"
+              benchmark_run_id: "${var.benchmark_run_id}"
+          new_cluster:
+            spark_version: "15.4.x-scala2.12"
+            azure_attributes:
+              first_on_demand: 3
+              availability: "ON_DEMAND_AZURE"
+            node_type_id: "Standard_D8s_v3"
+            num_workers: 2
+            custom_tags:
+              "purpose": "tpch-benchmark"
+
+    tpch_classic_spot:
+      name: "tpch_benchmark_classic_spot"
+      tags:
+        project: "tpch-benchmark"
+        compute_type: "classic_spot"
+      tasks:
+        - task_key: run_benchmark
+          notebook_task:
+            notebook_path: ../notebooks/run_benchmark.py
+            source: WORKSPACE
+            base_parameters:
+              compute_type: "classic_spot"
+              benchmark_run_id: "${var.benchmark_run_id}"
           new_cluster:
             spark_version: "15.4.x-scala2.12"
             azure_attributes:
               first_on_demand: 1
-              availability: "ON_DEMAND_AZURE"
-            node_type_id: "Standard_E8ds_v5"
-            num_workers: 0
-            spark_conf:
-              "spark.master": "local[*, 4]"
-              "spark.databricks.cluster.profile": "singleNode"
+              availability: "SPOT_WITH_FALLBACK_AZURE"
+              spot_bid_max_price: -1
+            node_type_id: "Standard_D8s_v3"
+            num_workers: 2
             custom_tags:
-              "ResourceClass": "SingleNode"
+              "purpose": "tpch-benchmark"
