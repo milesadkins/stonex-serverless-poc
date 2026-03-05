@@ -18,11 +18,6 @@ from pyspark.sql import functions as F
 CATALOG = "samples"
 SCHEMA = "tpch"
 ITERATIONS = 1
-RESULTS_TABLE = "hive_metastore.default.tpch_benchmark_results"
-
-# --- Classic Compute Cluster (must match resources/benchmark_job.yml) ---
-NODE_TYPE = "Standard_D8s_v3"
-NUM_NODES = 3  # 1 driver + 2 workers
 
 # --- Azure VM Pricing (hourly, pay-as-you-go list prices for your region) ---
 # Source: https://azure.microsoft.com/en-us/pricing/details/virtual-machines/linux/
@@ -36,11 +31,19 @@ VM_PRICING = {
 DBU_DISCOUNT = 0.39       # 39% discount on Databricks DBUs
 AZURE_VM_DISCOUNT = 0.60  # 60% discount on Azure VM instances (e.g. reservations)
 
-# Get parameters from job
+# --- Parameters from job (set via databricks.yml variables) ---
 dbutils.widgets.text("compute_type", "unknown")
 dbutils.widgets.text("benchmark_run_id", "unknown")
+dbutils.widgets.text("results_catalog", "main")
+dbutils.widgets.text("results_schema", "default")
+dbutils.widgets.text("node_type_id", "Standard_D8s_v3")
+dbutils.widgets.text("num_workers", "2")
+
 compute_type = dbutils.widgets.get("compute_type")
 benchmark_run_id = dbutils.widgets.get("benchmark_run_id")
+RESULTS_TABLE = f"{dbutils.widgets.get('results_catalog')}.{dbutils.widgets.get('results_schema')}.tpch_benchmark_results"
+NODE_TYPE = dbutils.widgets.get("node_type_id")
+NUM_NODES = int(dbutils.widgets.get("num_workers")) + 1  # workers + 1 driver
 
 try:
     cluster_id = spark.conf.get("spark.databricks.clusterUsageTags.clusterId", "unknown")

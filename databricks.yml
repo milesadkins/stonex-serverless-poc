@@ -11,6 +11,21 @@ variables:
   benchmark_run_id:
     description: "Unique identifier for this benchmark run (e.g. 20260305_143000)"
     default: "default"
+  results_catalog:
+    description: "Unity Catalog catalog for the benchmark results table"
+    default: "main"
+  results_schema:
+    description: "Schema for the benchmark results table"
+    default: "default"
+  node_type_id:
+    description: "Azure VM SKU for classic compute clusters"
+    default: "Standard_D8s_v3"
+  num_workers:
+    description: "Number of worker nodes for classic compute clusters"
+    default: "2"
+  spark_version:
+    description: "Databricks Runtime version for classic compute"
+    default: "15.4.x-scala2.12"
 
 targets:
   dev:

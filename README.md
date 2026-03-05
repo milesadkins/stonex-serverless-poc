@@ -23,21 +23,33 @@ notebooks/
 
 ## Configuration
 
-All tunable parameters live in the **Configuration** cell at the top of `notebooks/run_benchmark.py`:
+### Bundle Variables (`databricks.yml`)
+
+These control the job infrastructure and are passed to the notebook as widget parameters. Override at deploy/run time with `--var`:
+
+| Variable | Default | Description |
+|---|---|---|
+| `benchmark_run_id` | `default` | Unique identifier for this benchmark run |
+| `results_catalog` | `main` | Unity Catalog catalog for the results table |
+| `results_schema` | `default` | Schema for the results table |
+| `node_type_id` | `Standard_D8s_v3` | Azure VM SKU for classic compute clusters |
+| `num_workers` | `2` | Number of worker nodes for classic compute |
+| `spark_version` | `15.4.x-scala2.12` | Databricks Runtime version for classic compute |
+
+### Notebook Constants (`notebooks/run_benchmark.py`)
+
+These are edited directly in the notebook's Configuration cell:
 
 | Parameter | Default | Description |
 |---|---|---|
-| `CATALOG` | `samples` | Unity Catalog catalog containing TPC-H data |
+| `CATALOG` | `samples` | Unity Catalog catalog containing TPC-H source data |
 | `SCHEMA` | `tpch` | Schema containing TPC-H tables |
 | `ITERATIONS` | `1` | Number of times to run each query |
-| `RESULTS_TABLE` | `hive_metastore.default.tpch_benchmark_results` | Delta table for storing results |
-| `NODE_TYPE` | `Standard_D8s_v3` | Azure VM SKU for classic compute (must match `benchmark_job.yml`) |
-| `NUM_NODES` | `3` | Total nodes for classic compute (1 driver + 2 workers) |
 | `VM_PRICING` | See notebook | Azure VM hourly rates (on-demand and spot) per instance type |
 | `DBU_DISCOUNT` | `0.39` | Customer discount rate on Databricks DBUs (39%) |
 | `AZURE_VM_DISCOUNT` | `0.60` | Customer discount rate on Azure VMs (60%) |
 
-Classic compute cluster shape is defined in `resources/benchmark_job.yml` (node type, worker count, spot settings). If you change the cluster there, update `NUM_NODES` and `VM_PRICING` in the notebook to match.
+The results table is written to `<results_catalog>.<results_schema>.tpch_benchmark_results`. The classic cluster shape (`NODE_TYPE`, `NUM_NODES`) is derived automatically from the bundle variables -- no need to keep them in sync manually.
 
 ## Pricing Logic
 
@@ -88,7 +100,7 @@ For serverless, Total Cost = DBU Cost (VM Cost is $0).
 ### Deploy and Run
 
 ```bash
-# Deploy the bundle
+# Deploy the bundle (uses defaults from databricks.yml)
 databricks bundle deploy --target dev
 
 # Run all 4 benchmarks with a unique run ID
@@ -98,6 +110,16 @@ databricks bundle run tpch_serverless_perf_optimized --var benchmark_run_id=$RUN
 databricks bundle run tpch_serverless_cost_optimized --var benchmark_run_id=$RUN_ID
 databricks bundle run tpch_classic_on_demand         --var benchmark_run_id=$RUN_ID
 databricks bundle run tpch_classic_spot               --var benchmark_run_id=$RUN_ID
+```
+
+To customize the classic cluster or results location, pass `--var` overrides:
+
+```bash
+databricks bundle deploy --target dev \
+  --var node_type_id=Standard_D8ds_v5 \
+  --var num_workers=4 \
+  --var results_catalog=my_catalog \
+  --var results_schema=benchmarks
 ```
 
 Each job runs the same 22 TPC-H queries, records per-query execution times to the results Delta table, and (for serverless runs) displays a cost analysis comparing all configurations that share the same `benchmark_run_id`.
@@ -112,7 +134,7 @@ Open any of the completed job runs in the Databricks UI. The **Execution Time Pi
 
 ```sql
 SELECT compute_type, query_id, execution_time_seconds
-FROM hive_metastore.default.tpch_benchmark_results
+FROM <results_catalog>.<results_schema>.tpch_benchmark_results
 WHERE benchmark_run_id = '<your_run_id>'
 ORDER BY query_id, compute_type
 ```

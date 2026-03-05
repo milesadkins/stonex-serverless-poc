@@ -14,6 +14,10 @@ resources:
             base_parameters:
               compute_type: "serverless_perf_optimized"
               benchmark_run_id: "${var.benchmark_run_id}"
+              results_catalog: "${var.results_catalog}"
+              results_schema: "${var.results_schema}"
+              node_type_id: "${var.node_type_id}"
+              num_workers: "${var.num_workers}"
 
     tpch_serverless_cost_optimized:
       name: "tpch_benchmark_serverless_cost_optimized"
@@ -29,6 +33,10 @@ resources:
             base_parameters:
               compute_type: "serverless_cost_optimized"
               benchmark_run_id: "${var.benchmark_run_id}"
+              results_catalog: "${var.results_catalog}"
+              results_schema: "${var.results_schema}"
+              node_type_id: "${var.node_type_id}"
+              num_workers: "${var.num_workers}"
 
     tpch_classic_on_demand:
       name: "tpch_benchmark_classic_on_demand"
@@ -43,13 +51,17 @@ resources:
             base_parameters:
               compute_type: "classic_on_demand"
               benchmark_run_id: "${var.benchmark_run_id}"
+              results_catalog: "${var.results_catalog}"
+              results_schema: "${var.results_schema}"
+              node_type_id: "${var.node_type_id}"
+              num_workers: "${var.num_workers}"
           new_cluster:
-            spark_version: "15.4.x-scala2.12"
+            spark_version: "${var.spark_version}"
             azure_attributes:
               first_on_demand: 3
               availability: "ON_DEMAND_AZURE"
-            node_type_id: "Standard_D8s_v3"
-            num_workers: 2
+            node_type_id: "${var.node_type_id}"
+            num_workers: ${var.num_workers}
             custom_tags:
               "purpose": "tpch-benchmark"
 
@@ -66,13 +78,17 @@ resources:
             base_parameters:
               compute_type: "classic_spot"
               benchmark_run_id: "${var.benchmark_run_id}"
+              results_catalog: "${var.results_catalog}"
+              results_schema: "${var.results_schema}"
+              node_type_id: "${var.node_type_id}"
+              num_workers: "${var.num_workers}"
           new_cluster:
-            spark_version: "15.4.x-scala2.12"
+            spark_version: "${var.spark_version}"
             azure_attributes:
               first_on_demand: 1
               availability: "SPOT_WITH_FALLBACK_AZURE"
               spot_bid_max_price: -1
-            node_type_id: "Standard_D8s_v3"
-            num_workers: 2
+            node_type_id: "${var.node_type_id}"
+            num_workers: ${var.num_workers}
             custom_tags:
               "purpose": "tpch-benchmark"
