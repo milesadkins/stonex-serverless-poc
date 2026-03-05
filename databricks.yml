@@ -2,17 +2,7 @@ bundle:
   name: tpch_serverless_benchmark
 
 workspace:
-  host: ${var.databricks_host}
-
-variables:
-  databricks_host:
-    description: "Databricks workspace URL"
-
-artifacts:
-  tpch_benchmark:
-    type: whl
-    path: .
-    build: uv build --wheel
+  host: https://adb-7405604918328341.1.azuredatabricks.net
 
 include:
   - resources/*.yml
@@ -21,9 +11,5 @@ targets:
   dev:
     mode: development
     default: true
-    variables:
-      databricks_host: ""
   prod:
     mode: production
-    variables:
-      databricks_host: ""

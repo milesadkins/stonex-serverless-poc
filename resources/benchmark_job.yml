@@ -1,10 +1,35 @@
 resources:
   jobs:
-    tpch_benchmark:
-      name: "tpch_serverless_vs_classic_benchmark"
+    tpch_benchmark_serverless:
+      name: "tpch_benchmark_serverless"
+      tags:
+        project: "tpch-benchmark"
+        compute_type: "serverless"
       tasks:
         - task_key: run_benchmark
           notebook_task:
             notebook_path: ../notebooks/run_benchmark.py
-          libraries:
-            - whl: ../dist/*.whl
+            source: WORKSPACE
+
+    tpch_benchmark_classic:
+      name: "tpch_benchmark_classic"
+      tags:
+        project: "tpch-benchmark"
+        compute_type: "classic"
+      tasks:
+        - task_key: run_benchmark
+          notebook_task:
+            notebook_path: ../notebooks/run_benchmark.py
+            source: WORKSPACE
+          new_cluster:
+            spark_version: "15.4.x-scala2.12"
+            azure_attributes:
+              first_on_demand: 1
+              availability: "ON_DEMAND_AZURE"
+            node_type_id: "Standard_E8ds_v5"
+            num_workers: 0
+            spark_conf:
+              "spark.master": "local[*, 4]"
+              "spark.databricks.cluster.profile": "singleNode"
+            custom_tags:
+              "ResourceClass": "SingleNode"

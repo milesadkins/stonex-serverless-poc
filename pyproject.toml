@@ -1,21 +1,6 @@
 [project]
 name = "tpch-benchmark"
 version = "0.1.0"
-description = "TPC-H benchmark comparing Databricks serverless vs classic SQL warehouses"
+description = "TPC-H benchmark comparing Databricks serverless vs classic jobs compute"
 requires-python = ">=3.10"
-dependencies = [
-    "databricks-sdk>=0.20.0",
-]
-
-[project.optional-dependencies]
-dev = [
-    "pandas",
-    "matplotlib",
-]
-
-[build-system]
-requires = ["setuptools>=68.0"]
-build-backend = "setuptools.build_meta"
-
-[tool.setuptools.packages.find]
-where = ["src"]
+dependencies = []
