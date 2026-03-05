@@ -31,6 +31,7 @@ All tunable parameters live in the **Configuration** cell at the top of `noteboo
 | `SCHEMA` | `tpch` | Schema containing TPC-H tables |
 | `ITERATIONS` | `1` | Number of times to run each query |
 | `RESULTS_TABLE` | `hive_metastore.default.tpch_benchmark_results` | Delta table for storing results |
+| `NODE_TYPE` | `Standard_D8s_v3` | Azure VM SKU for classic compute (must match `benchmark_job.yml`) |
 | `NUM_NODES` | `3` | Total nodes for classic compute (1 driver + 2 workers) |
 | `VM_PRICING` | See notebook | Azure VM hourly rates (on-demand and spot) per instance type |
 | `DBU_DISCOUNT` | `0.39` | Customer discount rate on Databricks DBUs (39%) |
@@ -103,9 +104,31 @@ Each job runs the same 22 TPC-H queries, records per-query execution times to th
 
 ### Viewing Results
 
-After all 4 jobs complete, the cost analysis cells in the notebook output show:
-1. **Execution time pivot** -- per-query times across all 4 configurations
-2. **Full cost summary** -- DBUs consumed, list/discounted prices, VM costs, and totals
-3. **List prices reference** -- current DBU prices from system tables
+After all 4 jobs complete, execution time results are immediately available in the results Delta table. However, **cost analysis depends on `system.billing.usage`, which has a lag of up to 2-3 hours** after job completion.
 
-> **Note**: `system.billing.usage` data may lag up to a few hours after job completion. If the cost analysis cell shows $0 DBUs, wait and re-run the analysis cells. Classic compute clusters may be blocked from querying system tables by IP ACL rules -- the cost analysis cells handle this gracefully and can be re-run from a serverless job or SQL warehouse.
+#### Step 1: Check execution times (available immediately)
+
+Open any of the completed job runs in the Databricks UI. The **Execution Time Pivot** cell shows per-query times across all 4 configurations for the given `benchmark_run_id`. You can also query the results table directly:
+
+```sql
+SELECT compute_type, query_id, execution_time_seconds
+FROM hive_metastore.default.tpch_benchmark_results
+WHERE benchmark_run_id = '<your_run_id>'
+ORDER BY query_id, compute_type
+```
+
+#### Step 2: Get cost analysis (after billing data is available)
+
+The **Cost Analysis** and **List Prices Reference** cells query `system.billing.usage` and `system.billing.list_prices`. If the cost analysis shows $0 DBUs or missing data, billing hasn't been ingested yet.
+
+To get the full cost breakdown after the billing lag:
+
+1. Re-run one of the **serverless** jobs with the same `benchmark_run_id`:
+   ```bash
+   databricks bundle run tpch_serverless_perf_optimized --var benchmark_run_id=<your_run_id>
+   ```
+   The benchmark queries will re-execute (quickly), but the cost analysis cells will now pick up billing data from all 4 original runs.
+
+2. Alternatively, copy the cost analysis SQL from the notebook into a **SQL warehouse** query editor and run it there -- no need to re-run the full benchmark.
+
+> **Note**: Classic compute clusters may be blocked from querying system tables by workspace IP ACL rules. The cost analysis cells handle this gracefully. For best results, always review cost output from a **serverless** job run or a **SQL warehouse**.

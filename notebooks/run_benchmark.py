@@ -20,8 +20,9 @@ SCHEMA = "tpch"
 ITERATIONS = 1
 RESULTS_TABLE = "hive_metastore.default.tpch_benchmark_results"
 
-# --- Classic Compute Cluster ---
-NUM_NODES = 3  # 1 driver + 2 workers (must match resources/benchmark_job.yml)
+# --- Classic Compute Cluster (must match resources/benchmark_job.yml) ---
+NODE_TYPE = "Standard_D8s_v3"
+NUM_NODES = 3  # 1 driver + 2 workers
 
 # --- Azure VM Pricing (hourly, pay-as-you-go list prices for your region) ---
 # Source: https://azure.microsoft.com/en-us/pricing/details/virtual-machines/linux/
@@ -697,7 +698,7 @@ def apply_dbu_discount(list_price: float) -> float:
     return list_price * (1 - DBU_DISCOUNT)
 
 
-def compute_vm_cost(compute_type: str, execution_seconds: float, node_type: str = "Standard_D8s_v3") -> float:
+def compute_vm_cost(compute_type: str, execution_seconds: float, node_type: str = NODE_TYPE) -> float:
     """Calculate Azure VM cost for classic compute based on execution time only.
 
     Serverless has no VM cost (infrastructure is managed by Databricks).
