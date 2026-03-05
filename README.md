@@ -17,8 +17,10 @@ Compares the cost and performance of four Databricks compute configurations by r
 databricks.yml              # Databricks Asset Bundle config (targets, variables)
 resources/
   benchmark_job.yml         # Job definitions for all 4 compute configurations
+  analysis_job.yml          # Standalone cost analysis job
 notebooks/
-  run_benchmark.py          # Benchmark notebook (queries, timing, cost analysis)
+  run_benchmark.py          # Benchmark notebook (runs 22 TPC-H queries, saves results)
+  cost_analysis.py          # Cost analysis notebook (billing data, pricing summary)
 ```
 
 ## Configuration
@@ -130,7 +132,7 @@ After all 4 jobs complete, execution time results are immediately available in t
 
 #### Step 1: Check execution times (available immediately)
 
-Open any of the completed job runs in the Databricks UI. The **Execution Time Pivot** cell shows per-query times across all 4 configurations for the given `benchmark_run_id`. You can also query the results table directly:
+Open any of the completed job runs in the Databricks UI. You can also query the results table directly:
 
 ```sql
 SELECT compute_type, query_id, execution_time_seconds
@@ -139,18 +141,21 @@ WHERE benchmark_run_id = '<your_run_id>'
 ORDER BY query_id, compute_type
 ```
 
-#### Step 2: Get cost analysis (after billing data is available)
+#### Step 2: Run cost analysis (after billing data is available)
 
-The **Cost Analysis** and **List Prices Reference** cells query `system.billing.usage` and `system.billing.list_prices`. If the cost analysis shows $0 DBUs or missing data, billing hasn't been ingested yet.
+The cost analysis is a **separate notebook and job** (`cost_analysis.py`). It reads from the results table and `system.billing` tables without re-running any benchmark queries.
 
-To get the full cost breakdown after the billing lag:
+Wait 2-3 hours for billing data to be ingested, then run:
 
-1. Re-run one of the **serverless** jobs with the same `benchmark_run_id`:
-   ```bash
-   databricks bundle run tpch_serverless_perf_optimized --var benchmark_run_id=<your_run_id>
-   ```
-   The benchmark queries will re-execute (quickly), but the cost analysis cells will now pick up billing data from all 4 original runs.
+```bash
+databricks bundle run tpch_cost_analysis --var benchmark_run_id=<your_run_id>
+```
 
-2. Alternatively, copy the cost analysis SQL from the notebook into a **SQL warehouse** query editor and run it there -- no need to re-run the full benchmark.
+This runs on serverless compute and produces:
+1. **Execution time pivot** -- per-query times across all 4 configurations
+2. **Full cost summary** -- DBUs consumed, list/discounted prices, VM costs, and totals
+3. **List prices reference** -- current DBU prices from system tables
 
-> **Note**: Classic compute clusters may be blocked from querying system tables by workspace IP ACL rules. The cost analysis cells handle this gracefully. For best results, always review cost output from a **serverless** job run or a **SQL warehouse**.
+You can re-run this job as many times as needed without affecting the benchmark data.
+
+> **Note**: Classic compute clusters may be blocked from querying system tables by workspace IP ACL rules. The analysis job uses serverless compute to avoid this.

@@ -1,0 +1,18 @@
+resources:
+  jobs:
+    tpch_cost_analysis:
+      name: "tpch_benchmark_cost_analysis"
+      tags:
+        project: "tpch-benchmark"
+      performance_target: "STANDARD"
+      tasks:
+        - task_key: cost_analysis
+          notebook_task:
+            notebook_path: ../notebooks/cost_analysis.py
+            source: WORKSPACE
+            base_parameters:
+              benchmark_run_id: "${var.benchmark_run_id}"
+              results_catalog: "${var.results_catalog}"
+              results_schema: "${var.results_schema}"
+              node_type_id: "${var.node_type_id}"
+              num_workers: "${var.num_workers}"
